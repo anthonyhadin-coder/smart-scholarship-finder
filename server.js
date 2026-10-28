@@ -28,6 +28,8 @@ app.get('/api/health', async (req, res) => {
   let dbStatus = 'disconnected';
   let dbName = null;
   let recordsCount = 0;
+  let totalRecords = 0;
+  let usersCount = 0;
 
   try {
     await connectDB();
@@ -35,7 +37,15 @@ app.get('/api/health', async (req, res) => {
       dbStatus = 'connected';
       dbName = mongoose.connection.name;
       const Scholarship = require('./models/Scholarship');
-      recordsCount = await Scholarship.countDocuments({ status: 'published' });
+      const User = require('./models/User');
+      const [publishedCount, totalScholarships, totalUsers] = await Promise.all([
+        Scholarship.countDocuments({ status: 'published' }).catch(() => 0),
+        Scholarship.countDocuments({}).catch(() => 0),
+        User.countDocuments({}).catch(() => 0)
+      ]);
+      recordsCount = publishedCount;
+      totalRecords = totalScholarships;
+      usersCount = totalUsers;
     }
   } catch (err) {
     dbStatus = 'disconnected';
@@ -51,7 +61,10 @@ app.get('/api/health', async (req, res) => {
       status: dbStatus,
       connected: isConnected,
       name: isConnected ? dbName : null,
-      publishedRecordsCount: recordsCount
+      publishedRecordsCount: recordsCount,
+      totalScholarships: totalRecords,
+      totalUsers: usersCount,
+      collections: ['scholarships', 'users']
     },
     message: isConnected ? 'Database connection active' : 'Database connection unavailable',
     timestamp: new Date().toISOString()
