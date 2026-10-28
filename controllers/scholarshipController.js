@@ -1,0 +1,17 @@
+const mongoose=require('mongoose');
+const Scholarship=require('../models/Scholarship');
+const {scoreScholarship}=require('../utils/matchScorer');
+const escapeRegex=v=>String(v).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+async function list(req,res,next){try{
+ const {search='',degreeLevel='',field='',tag='',sort='deadline',page='1'}=req.query,filter={status:'published'};
+ if(search.trim()){const rx=new RegExp(escapeRegex(search.trim().slice(0,80)),'i');filter.$or=[{title:rx},{provider:rx},{description:rx},{tags:rx}];}
+ if(degreeLevel)filter.degreeLevels=degreeLevel;if(field)filter.fieldsOfStudy=new RegExp(escapeRegex(field.slice(0,80)),'i');if(tag)filter.tags=tag.toLowerCase();
+ const p=Math.max(1,Math.min(1000,parseInt(page,10)||1)),sortBy=sort==='amount'?{amount:-1}:sort==='title'?{title:1}:{deadline:1};
+ const [data,total]=await Promise.all([Scholarship.find(filter).sort(sortBy).skip((p-1)*12).limit(12).lean(),Scholarship.countDocuments(filter)]);
+ res.json({success:true,data,pagination:{page:p,limit:12,total,pages:Math.ceil(total/12)}});
+ }catch(e){next(e)}}
+async function getById(req,res,next){try{if(!mongoose.isValidObjectId(req.params.id))return res.status(400).json({success:false,message:'Invalid scholarship ID.'});const data=await Scholarship.findById(req.params.id).lean();if(!data)return res.status(404).json({success:false,message:'Scholarship not found.'});res.json({success:true,data});}catch(e){next(e)}}
+async function summary(req,res,next){try{const [total,closingSoon,agg]=await Promise.all([Scholarship.countDocuments({status:'published'}),Scholarship.countDocuments({status:'published',deadline:{$gte:new Date(),$lte:new Date(Date.now()+30*86400000)}}),Scholarship.aggregate([{$match:{status:'published'}},{$group:{_id:null,amount:{$sum:'$amount'}}}])]);res.json({success:true,data:{total,closingSoon,listedAwardValue:agg[0]?.amount||0}});}catch(e){next(e)}}
+async function match(req,res,next){try{const b=req.body||{},gpa=Number(b.gpa),scale=Number(b.gpaScale||10);if(b.gpa===undefined||!Number.isFinite(gpa)||!Number.isFinite(scale)||![4,10,100].includes(scale)||gpa<0||gpa>scale)return res.status(400).json({success:false,message:'Enter a valid GPA within a 4, 10, or 100 point scale.'});if(!b.degreeLevel||typeof b.degreeLevel!=='string')return res.status(400).json({success:false,message:'Degree level is required.'});const split=v=>Array.isArray(v)?v:typeof v==='string'?v.split(',').map(x=>x.trim()).filter(Boolean):[];const student={gpa,gpaScale:scale,degreeLevel:b.degreeLevel,fieldsOfStudy:split(b.fieldsOfStudy),citizenship:String(b.citizenship||''),tags:split(b.tags),minAmount:Number(b.minAmount)||0};const docs=await Scholarship.find({status:'published'}).lean();const matches=docs.map(s=>scoreScholarship(student,s)).sort((a,b)=>b.score-a.score);res.json({success:true,data:{matches,note:'Scores are guidance only, not award probabilities.'}});}catch(e){next(e)}}
+async function create(req,res,next){try{const b=req.body||{};for(const k of ['title','provider','description'])if(!String(b[k]||'').trim())return res.status(400).json({success:false,message:`${k} is required.`});if(!Number.isFinite(Number(b.amount))||Number(b.amount)<0)return res.status(400).json({success:false,message:'Amount must be non-negative.'});const data=await Scholarship.create({...b,amount:Number(b.amount),status:'published',isDemo:true});res.status(201).json({success:true,data,message:'Demo scholarship created.'});}catch(e){next(e)}}
+module.exports={list,getById,summary,match,create};
