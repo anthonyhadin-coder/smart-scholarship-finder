@@ -23,6 +23,13 @@ app.get('/health', async (req, res) => {
   });
 });
 
+function sanitizeError(msg) {
+  if (!msg) return 'Database connection unavailable';
+  return String(msg)
+    .replace(/mongodb(\+srv)?:\/\/[^@]+@/g, 'mongodb+srv://[REDACTED]@')
+    .replace(/(password|pwd|secret)=[^&]+/gi, '$1=[REDACTED]');
+}
+
 // Detailed API & Database status health endpoint (used by frontend Retry button)
 app.get('/api/health', async (req, res) => {
   let dbStatus = 'disconnected';
@@ -30,6 +37,7 @@ app.get('/api/health', async (req, res) => {
   let recordsCount = 0;
   let totalRecords = 0;
   let usersCount = 0;
+  let errorReason = null;
 
   try {
     await connectDB();
@@ -49,6 +57,7 @@ app.get('/api/health', async (req, res) => {
     }
   } catch (err) {
     dbStatus = 'disconnected';
+    errorReason = sanitizeError(err.message);
   }
 
   const isConnected = dbStatus === 'connected';
@@ -64,9 +73,10 @@ app.get('/api/health', async (req, res) => {
       publishedRecordsCount: recordsCount,
       totalScholarships: totalRecords,
       totalUsers: usersCount,
-      collections: ['scholarships', 'users']
+      collections: ['scholarships', 'users'],
+      error: !isConnected ? errorReason : undefined
     },
-    message: isConnected ? 'Database connection active' : 'Database connection unavailable',
+    message: isConnected ? 'Database connection active' : (errorReason || 'Database connection unavailable'),
     timestamp: new Date().toISOString()
   });
 });

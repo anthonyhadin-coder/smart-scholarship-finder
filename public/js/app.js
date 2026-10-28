@@ -132,12 +132,17 @@ function render(items, target = '#scholarshipGrid') {
 
   // State 1: Database Connection Unavailable
   if (state.connectionStatus === 'disconnected') {
+    const errorDetail = state.lastDbError
+      ? `<div class="db-error-detail"><b>Diagnostic details:</b> ${safe(state.lastDbError)}</div>`
+      : '';
+
     n.innerHTML = `
       <div class="db-error-card">
         <span style="font-size:32px">⚠️</span>
         <h3>Database Connection Unavailable</h3>
         <p>The backend is active, but it could not connect to MongoDB. If hosted on Vercel or Cloud, please verify that <code>MONGO_URI</code> is saved in your Project Settings and redeployed.</p>
-        <button id="retryDbBtn" class="btn btn-yellow">↻ Retry Connection</button>
+        ${errorDetail}
+        <button id="retryDbBtn" class="btn btn-yellow" style="margin-top:10px">↻ Retry Connection</button>
       </div>
     `;
     const btn = $('#retryDbBtn');
@@ -201,23 +206,25 @@ async function retryConnection() {
     const health = await api('/api/health');
     if (health.database && health.database.connected) {
       state.connectionStatus = 'connected';
+      state.lastDbError = null;
       toast('✓ Database connected! Loading opportunities…');
       await load();
     } else {
       state.connectionStatus = 'disconnected';
+      state.lastDbError = health.database?.error || health.message || 'Database connection unavailable.';
       render([], '#scholarshipGrid');
-      toast('Database connection still unavailable. Please verify MONGO_URI.');
+      toast(state.lastDbError);
     }
   } catch (err) {
     if (err.isNetworkError) {
       state.connectionStatus = 'network_error';
-    } else if (err.status === 503) {
-      state.connectionStatus = 'disconnected';
+      state.lastDbError = 'Network or server unreachable.';
     } else {
-      state.connectionStatus = 'network_error';
+      state.connectionStatus = 'disconnected';
+      state.lastDbError = err.data?.message || err.data?.database?.error || err.message;
     }
     render([], '#scholarshipGrid');
-    toast(err.message || 'Connection check failed.');
+    toast(state.lastDbError);
   } finally {
     setTimeout(() => {
       state.isRetrying = false;
