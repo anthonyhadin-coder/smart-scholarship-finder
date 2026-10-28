@@ -12,3 +12,4 @@ services:
         value: production
       - key: MONGO_URI
         sync: false
+
