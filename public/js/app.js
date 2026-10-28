@@ -9,7 +9,8 @@ const state = {
   saved: new Set(JSON.parse(localStorage.getItem('sf-saved') || '[]')),
   page: 1,
   pageSize: 9,
-  isDbConnected: true
+  connectionStatus: 'unknown', // 'connected' | 'disconnected' | 'network_error' | 'unknown'
+  isRetrying: false
 };
 
 const palettes = ['', 'green', 'lilac', 'peach', 'blue', 'pink'];
@@ -33,7 +34,15 @@ async function api(url, opts = {}) {
     ...(opts.headers || {})
   };
 
-  const r = await fetch(url, { ...opts, headers });
+  let r;
+  try {
+    r = await fetch(url, { ...opts, headers });
+  } catch (netErr) {
+    const error = new Error('Network or server unreachable. Please check your internet connection.');
+    error.isNetworkError = true;
+    throw error;
+  }
+
   let d = {};
   try {
     d = await r.json();
@@ -116,35 +125,109 @@ function card(x, i) {
   `;
 }
 
+// Renders the 4 distinct states
 function render(items, target = '#scholarshipGrid') {
   const n = $(target);
   if (!n) return;
 
-  if (!state.isDbConnected) {
+  // State 1: Database Connection Unavailable
+  if (state.connectionStatus === 'disconnected') {
     n.innerHTML = `
       <div class="db-error-card">
         <span style="font-size:32px">⚠️</span>
         <h3>Database Connection Unavailable</h3>
-        <p>Could not connect to MongoDB. If running on Vercel or Cloud, please verify that <code>MONGO_URI</code> is configured in environment variables.</p>
+        <p>The backend is active, but it could not connect to MongoDB. If hosted on Vercel or Cloud, please verify that <code>MONGO_URI</code> is saved in your Project Settings and redeployed.</p>
         <button id="retryDbBtn" class="btn btn-yellow">↻ Retry Connection</button>
       </div>
     `;
     const btn = $('#retryDbBtn');
-    if (btn) btn.addEventListener('click', () => { btn.textContent = 'Connecting…'; load(); });
+    if (btn) btn.onclick = retryConnection;
     return;
   }
 
+  // State 4: Temporary API or Network Failure
+  if (state.connectionStatus === 'network_error') {
+    n.innerHTML = `
+      <div class="db-error-card" style="background:#f0f4ff;border-color:#c7d7fe;color:#1e3a8a">
+        <span style="font-size:32px">📡</span>
+        <h3 style="color:#1e3a8a">Network / Server Connection Error</h3>
+        <p style="color:#2563eb">Unable to reach the server. Please check your internet connection or verify that the backend service is running.</p>
+        <button id="retryDbBtn" class="btn btn-dark">↻ Retry Server Connection</button>
+      </div>
+    `;
+    const btn = $('#retryDbBtn');
+    if (btn) btn.onclick = retryConnection;
+    return;
+  }
+
+  // State 2: Database Connected, but No Scholarship Records Exist
   if (!items.length) {
     n.innerHTML = `
       <div class="empty-state">
-        <b>No published opportunities found.</b>
-        <p style="margin:8px 0 0;font-size:11px">Are you an organization offering an educational award? Create a Provider account to publish a scholarship!</p>
+        <span style="font-size:28px">✦</span>
+        <h3 style="margin:8px 0 4px">Database Connected (0 Records)</h3>
+        <p style="margin:0 0 12px;font-size:11px;color:#707684">No published scholarships exist in the database yet. Are you a scholarship provider? Create an account to publish your organization's awards!</p>
+        <button id="emptyStateProviderBtn" class="btn btn-yellow" style="font-size:10px">Sign In as Provider ↗</button>
       </div>
     `;
+    const btn = $('#emptyStateProviderBtn');
+    if (btn) {
+      btn.onclick = () => {
+        $('#authDialog').showModal();
+        $('#authTabRegister').click();
+        const r = document.querySelector('input[name="accountRole"][value="provider"]');
+        if (r) { r.checked = true; r.dispatchEvent(new Event('change')); }
+      };
+    }
     return;
   }
 
+  // State 3: Scholarships Successfully Loaded
   n.innerHTML = items.map(card).join('');
+}
+
+// Real Retry Connection handler with debouncing and real backend verification
+async function retryConnection() {
+  if (state.isRetrying) return;
+  state.isRetrying = true;
+
+  const btn = $('#retryDbBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loader"></span> Checking backend & database…';
+  }
+
+  try {
+    const health = await api('/api/health');
+    if (health.database && health.database.connected) {
+      state.connectionStatus = 'connected';
+      toast('✓ Database connected! Loading opportunities…');
+      await load();
+    } else {
+      state.connectionStatus = 'disconnected';
+      render([], '#scholarshipGrid');
+      toast('Database connection still unavailable. Please verify MONGO_URI.');
+    }
+  } catch (err) {
+    if (err.isNetworkError) {
+      state.connectionStatus = 'network_error';
+    } else if (err.status === 503) {
+      state.connectionStatus = 'disconnected';
+    } else {
+      state.connectionStatus = 'network_error';
+    }
+    render([], '#scholarshipGrid');
+    toast(err.message || 'Connection check failed.');
+  } finally {
+    setTimeout(() => {
+      state.isRetrying = false;
+      const b = $('#retryDbBtn');
+      if (b) {
+        b.disabled = false;
+        b.textContent = '↻ Retry Connection';
+      }
+    }, 1200);
+  }
 }
 
 function filter() {
@@ -167,7 +250,13 @@ function filter() {
   render(shown);
 
   const countEl = $('#resultCount');
-  if (countEl) countEl.textContent = `${state.filtered.length} opportunity${state.filtered.length === 1 ? '' : 'ies'} found`;
+  if (countEl) {
+    if (state.connectionStatus === 'connected') {
+      countEl.textContent = `${state.filtered.length} opportunity${state.filtered.length === 1 ? '' : 'ies'} found`;
+    } else {
+      countEl.textContent = 'Database unavailable';
+    }
+  }
 
   const loadMoreBtn = $('#loadMore');
   if (loadMoreBtn) loadMoreBtn.classList.toggle('hidden', shown.length >= state.filtered.length);
@@ -190,7 +279,7 @@ async function load() {
       api('/api/scholarships/summary')
     ]);
 
-    state.isDbConnected = true;
+    state.connectionStatus = 'connected';
     state.scholarships = listRes.data || [];
 
     $('#statScholarships').textContent = sumRes.data.total;
@@ -200,7 +289,11 @@ async function load() {
     filter();
     renderSaved();
   } catch (e) {
-    state.isDbConnected = false;
+    if (e.isNetworkError) {
+      state.connectionStatus = 'network_error';
+    } else {
+      state.connectionStatus = 'disconnected';
+    }
     render([], '#scholarshipGrid');
     $('#resultCount').textContent = 'Database unavailable';
   }

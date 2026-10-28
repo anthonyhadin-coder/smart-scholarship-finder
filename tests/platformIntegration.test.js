@@ -191,3 +191,33 @@ test('Integration: Provider workflow, Draft/Published states, and strict ownersh
   assert.ok(titles.includes('Provider A Award'));
   assert.ok(!titles.includes('Provider A Draft Award')); // Draft is hidden from public!
 });
+
+
+test('Integration: /api/health actively reports database connectivity and records count', async () => {
+  const res = await fetch(`${baseUrl}/api/health`);
+  const data = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal(data.success, true);
+  assert.equal(data.api, 'running');
+  assert.equal(data.database.connected, true);
+  assert.equal(data.database.name, 'smart_scholarship');
+  assert.equal(typeof data.database.publishedRecordsCount, 'number');
+});
+
+test('Integration: /health lightweight endpoint returns ok status', async () => {
+  const res = await fetch(`${baseUrl}/health`);
+  const data = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal(data.status, 'ok');
+  assert.equal(data.database, 'connected');
+});
+
+test('Integration: Distinguishes empty scholarship results from connection error', async () => {
+  const res = await fetch(`${baseUrl}/api/scholarships?search=NonExistentScholarshipQuery12345`);
+  const data = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal(data.success, true);
+  assert.equal(Array.isArray(data.data), true);
+  assert.equal(data.data.length, 0);
+  assert.equal(data.isEmpty, true); // Distinct empty flag, not an error!
+});

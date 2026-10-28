@@ -14,3 +14,4 @@ router.patch('/scholarships/:id/status', providerController.updateStatus);
 router.delete('/scholarships/:id', providerController.deleteScholarship);
 
 module.exports = router;
+

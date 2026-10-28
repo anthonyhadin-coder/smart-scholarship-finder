@@ -7,3 +7,4 @@ router.post('/login', authController.login);
 router.get('/me', authenticate, authController.me);
 
 module.exports = router;
+

@@ -67,3 +67,4 @@ test('Strictly rejects non-permitted roles', () => {
   assert.ok(!allowedRoles.includes('superadmin'));
   assert.ok(!allowedRoles.includes('moderator'));
 });
+

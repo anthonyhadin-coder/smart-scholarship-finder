@@ -74,3 +74,4 @@ module.exports = {
   generateToken,
   JWT_SECRET
 };
+
