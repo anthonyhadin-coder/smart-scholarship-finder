@@ -26,8 +26,11 @@ app.use('/api', async (req, res, next) => {
   }
 });
 
-app.use('/api/scholarships',require('./routes/scholarships'));
-app.use('/api/*path',(req,res)=>res.status(404).json({success:false,message:'API route not found'}));
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/student', require('./routes/student'));
+app.use('/api/provider', require('./routes/provider'));
+app.use('/api/scholarships', require('./routes/scholarships'));
+app.use('/api/*path', (req, res) => res.status(404).json({ success: false, message: 'API route not found' }));
 app.use((req,res,next)=>req.method==='GET'?res.sendFile(path.join(__dirname,'public','index.html')):next());
 app.use((err,req,res,next)=>{console.error('[API error]',err.message);res.status(err.status||500).json({success:false,message:(err.status||500)>=500?'Something went wrong. Please try again.':err.message});});
 async function start(){
