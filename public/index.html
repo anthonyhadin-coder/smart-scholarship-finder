@@ -115,8 +115,8 @@
       <div class="section-heading">
         <div>
           <div class="eyebrow"><span class="eyebrow-line"></span>PROVIDER WORKSPACE</div>
-          <h2>My Submitted <em>Listings</em></h2>
-          <p>Create, edit, and publish your organization's scholarships. You have full control over your listings.</p>
+          <h2>Scholarship & <em>Applicant Management</em></h2>
+          <p>Create listings, manage publication statuses, and review student applications with full approval control.</p>
         </div>
         <button id="createListingBtn" class="btn btn-yellow">+ Post New Scholarship ↗</button>
       </div>
@@ -129,8 +129,30 @@
         </div>
       </div>
 
-      <div id="providerGrid" class="scholarship-grid">
-        <div class="loading-state">Loading your listings…</div>
+      <!-- Provider Workspace Tabs -->
+      <div class="provider-tabs">
+        <button id="tabProviderListings" class="provider-tab active">
+          <span>My Listings</span>
+          <span id="providerListingsCount" class="provider-tab-badge">0</span>
+        </button>
+        <button id="tabProviderApplications" class="provider-tab">
+          <span>Applicant Submissions</span>
+          <span id="providerAppCount" class="provider-tab-badge">0</span>
+        </button>
+      </div>
+
+      <!-- Tab 1: Listings View -->
+      <div id="providerListingsView">
+        <div id="providerGrid" class="scholarship-grid">
+          <div class="loading-state">Loading your listings…</div>
+        </div>
+      </div>
+
+      <!-- Tab 2: Applications View -->
+      <div id="providerApplicationsView" class="hidden">
+        <div id="providerAppList" class="applicant-grid">
+          <div class="loading-state">Loading applicant submissions…</div>
+        </div>
       </div>
     </section>
 

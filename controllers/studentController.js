@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const Scholarship = require('../models/Scholarship');
+const Application = require('../models/Application');
 const { scoreScholarship } = require('../utils/matchScorer');
 
 async function getProfile(req, res, next) {
@@ -158,11 +159,97 @@ async function getMyMatches(req, res, next) {
   }
 }
 
+async function applyScholarship(req, res, next) {
+  try {
+    const { id } = req.params;
+    const scholarship = await Scholarship.findById(id);
+    if (!scholarship) {
+      return res.status(404).json({ success: false, message: 'Scholarship not found.' });
+    }
+
+    if (scholarship.status !== 'published') {
+      return res.status(400).json({ success: false, message: 'This scholarship is not currently accepting applications.' });
+    }
+
+    const now = new Date();
+    if (scholarship.deadline && new Date(scholarship.deadline) < new Date(now.getFullYear(), now.getMonth(), now.getDate())) {
+      return res.status(400).json({ success: false, message: 'The application deadline for this scholarship has passed.' });
+    }
+
+    // Check if student already applied
+    const existing = await Application.findOne({ scholarship: scholarship._id, student: req.user._id });
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        message: 'You have already submitted an application for this scholarship.',
+        application: existing
+      });
+    }
+
+    const profile = req.user.profile || {};
+    const matchScore = Number.isFinite(Number(req.body.matchScore))
+      ? Math.min(100, Math.max(0, Math.round(Number(req.body.matchScore))))
+      : 0;
+
+    const application = await Application.create({
+      scholarship: scholarship._id,
+      student: req.user._id,
+      provider: scholarship.createdBy || null,
+      status: 'pending',
+      matchScore,
+      studentSnapshot: {
+        name: req.user.name,
+        email: req.user.email,
+        educationLevel: profile.educationLevel || '',
+        courses: profile.courses || [],
+        gpa: profile.gpa ?? null,
+        gpaScale: profile.gpaScale || 10,
+        annualFamilyIncome: profile.annualFamilyIncome ?? null,
+        state: profile.state || '',
+        gender: profile.gender || '',
+        category: profile.category || ''
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      data: application,
+      message: 'Application submitted successfully! The scholarship provider will review your application.'
+    });
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'You have already submitted an application for this scholarship.'
+      });
+    }
+    next(err);
+  }
+}
+
+async function getMyApplications(req, res, next) {
+  try {
+    const applications = await Application.find({ student: req.user._id })
+      .populate('scholarship', 'title provider amount currency deadline status createdBy')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({
+      success: true,
+      data: applications
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getProfile,
   updateProfile,
   getSaved,
   toggleSaved,
-  getMyMatches
+  getMyMatches,
+  applyScholarship,
+  getMyApplications
 };
 

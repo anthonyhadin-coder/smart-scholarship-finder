@@ -10,6 +10,8 @@ router.put('/profile', studentController.updateProfile);
 router.get('/saved', studentController.getSaved);
 router.post('/saved/:id', studentController.toggleSaved);
 router.get('/matches', studentController.getMyMatches);
+router.post('/apply/:id', studentController.applyScholarship);
+router.get('/applications', studentController.getMyApplications);
 
 module.exports = router;
 

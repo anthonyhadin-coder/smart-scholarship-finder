@@ -1,4 +1,5 @@
 const Scholarship = require('../models/Scholarship');
+const Application = require('../models/Application');
 
 async function getProfile(req, res, next) {
   try {
@@ -249,6 +250,76 @@ async function deleteScholarship(req, res, next) {
   }
 }
 
+async function getApplications(req, res, next) {
+  try {
+    const myScholarshipIds = await Scholarship.find({ createdBy: req.user._id }).distinct('_id');
+
+    const applications = await Application.find({
+      $or: [
+        { provider: req.user._id },
+        { scholarship: { $in: myScholarshipIds } }
+      ]
+    })
+      .populate('scholarship', 'title amount currency deadline status createdBy')
+      .populate('student', 'name email profile')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({
+      success: true,
+      data: applications
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function decideApplication(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { status, decisionNotes } = req.body || {};
+
+    if (!['approved', 'rejected'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Status must be either approved or rejected.'
+      });
+    }
+
+    const application = await Application.findById(id).populate('scholarship');
+    if (!application) {
+      return res.status(404).json({ success: false, message: 'Application not found.' });
+    }
+
+    // Strict provider ownership check
+    const isOwner = (application.provider && String(application.provider) === String(req.user._id)) ||
+      (application.scholarship?.createdBy && String(application.scholarship.createdBy) === String(req.user._id));
+
+    if (!isOwner) {
+      return res.status(403).json({
+        success: false,
+        message: 'Permission denied. You can only review applications for scholarships managed by your organization.'
+      });
+    }
+
+    application.status = status;
+    application.decidedAt = new Date();
+    if (decisionNotes !== undefined) {
+      application.decisionNotes = String(decisionNotes).trim().slice(0, 500);
+    }
+
+    await application.save();
+
+    res.json({
+      success: true,
+      data: application,
+      message: `Application marked as ${status}.`
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -256,6 +327,8 @@ module.exports = {
   createScholarship,
   updateScholarship,
   updateStatus,
-  deleteScholarship
+  deleteScholarship,
+  getApplications,
+  decideApplication
 };
 

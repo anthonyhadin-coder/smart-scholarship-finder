@@ -46,3 +46,37 @@
 .provider-actions{display:flex;gap:6px;margin-top:12px;border-top:1px solid #f0f0f1;padding-top:10px}
 
 .db-error-detail{background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:8px 12px;font-size:10px;color:#92400e;max-width:520px;margin:10px auto;word-break:break-word}
+
+/* APPLICANT REVIEW & EXPLAINABLE MATCH ACTIONS */
+.match-item-footer{display:flex;align-items:center;justify-content:space-between;margin-top:14px;padding-top:10px;border-top:1px dashed #e8e8ec;gap:10px;flex-wrap:wrap}
+.apply-match-btn{padding:8px 16px;font-size:11px;font-weight:800;border-radius:5px;cursor:pointer}
+.apply-match-btn:disabled{opacity:.6;cursor:not-allowed;transform:none!important}
+.app-status-pill{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:800;padding:6px 12px;border-radius:5px;letter-spacing:.3px}
+.app-status-pill.pending{background:#fff3cd;color:#856404;border:1px solid #ffeeba}
+.app-status-pill.approved{background:#d4edda;color:#155724;border:1px solid #c3e6cb}
+.app-status-pill.rejected{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb}
+
+.provider-tabs{display:flex;gap:12px;margin-bottom:20px;border-bottom:2px solid #eef0f3}
+.provider-tab{background:transparent;border:0;border-bottom:3px solid transparent;padding:10px 16px;font-size:12px;font-weight:800;color:#6b7280;cursor:pointer;display:flex;align-items:center;gap:8px;margin-bottom:-2px;transition:all .2s}
+.provider-tab:hover{color:var(--ink)}
+.provider-tab.active{color:var(--ink);border-bottom-color:var(--yellow)}
+.provider-tab-badge{background:var(--navy);color:white;padding:2px 7px;border-radius:12px;font-size:10px;font-weight:700}
+.provider-tab.active .provider-tab-badge{background:var(--yellow);color:var(--ink)}
+
+.applicant-grid{display:grid;grid-template-columns:1fr;gap:16px}
+.applicant-card{background:white;border:1px solid #e5e7eb;border-radius:9px;padding:20px;box-shadow:0 4px 12px #00000008;display:grid;gap:14px;transition:box-shadow .2s}
+.applicant-card:hover{box-shadow:0 8px 24px #00000010}
+.applicant-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.applicant-card-header h4{margin:0;font-size:16px;display:flex;align-items:center;gap:8px}
+.applicant-sub{font-size:11px;color:#6b7280;margin:3px 0 0}
+.applicant-profile-details{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;background:#f9fafb;padding:12px;border-radius:6px;font-size:11px}
+.applicant-profile-details div b{display:block;color:#4b5563;font-size:9px;text-transform:uppercase;letter-spacing:.5px}
+.applicant-profile-details div span{color:#111827;font-weight:600}
+.applicant-decision-bar{display:flex;align-items:center;justify-content:space-between;padding-top:12px;border-top:1px solid #f3f4f6;gap:12px;flex-wrap:wrap}
+.btn-approve{background:#10b981;color:white;border:0;padding:8px 14px;border-radius:5px;font-weight:800;font-size:11px;cursor:pointer;transition:transform .15s,background .15s}
+.btn-approve:hover{background:#059669;transform:translateY(-1px)}
+.btn-reject{background:#ef4444;color:white;border:0;padding:8px 14px;border-radius:5px;font-weight:800;font-size:11px;cursor:pointer;transition:transform .15s,background .15s}
+.btn-reject:hover{background:#dc2626;transform:translateY(-1px)}
+.btn-change-decision{background:#f3f4f6;color:#374151;border:1px solid #d1d5db;padding:6px 10px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer}
+.btn-change-decision:hover{background:#e5e7eb}
+

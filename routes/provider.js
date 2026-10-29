@@ -12,6 +12,8 @@ router.post('/scholarships', providerController.createScholarship);
 router.put('/scholarships/:id', providerController.updateScholarship);
 router.patch('/scholarships/:id/status', providerController.updateStatus);
 router.delete('/scholarships/:id', providerController.deleteScholarship);
+router.get('/applications', providerController.getApplications);
+router.patch('/applications/:id/decision', providerController.decideApplication);
 
 module.exports = router;
 

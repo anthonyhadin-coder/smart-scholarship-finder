@@ -6,6 +6,9 @@ const state = {
   scholarships: [],
   filtered: [],
   providerScholarships: [],
+  providerApplications: [],
+  myApplications: new Map(), // scholarshipId -> application
+  lastMatches: [],
   saved: new Set(JSON.parse(localStorage.getItem('sf-saved') || '[]')),
   page: 1,
   pageSize: 9,
@@ -359,8 +362,9 @@ function csv(v) {
   return String(v || '').split(',').map(x => x.trim()).filter(Boolean);
 }
 
-// Render Ranked Eligibility Matches with 3 Outcomes
+// Render Ranked Eligibility Matches with 3 Outcomes and Register / Apply Action
 function renderMatches(matches) {
+  state.lastMatches = matches;
   const n = $('#matchResults');
   n.classList.remove('hidden');
 
@@ -373,12 +377,32 @@ function renderMatches(matches) {
     <h3>Your explainable matches</h3>
     <p>Ranked guidance based on your academic profile and criteria.</p>
     ${matches.slice(0, 15).map(x => {
+      const id = String(x.scholarshipId || x._id || x.id);
       const statusClass = x.status || 'eligible';
       const statusLabel = x.statusLabel || (statusClass === 'ineligible' ? 'Not eligible based on known mandatory criteria' : statusClass === 'needs_verification' ? 'More information required' : 'Potentially eligible');
 
       const passedItems = (x.reasons || []).map(r => `<div class="criteria-item passed"><span>✓</span><span>${safe(r)}</span></div>`).join('');
       const unmetItems = (x.unmetCriteria || []).map(r => `<div class="criteria-item failed"><span>✗</span><span>${safe(r)}</span></div>`).join('');
       const missingItems = (x.unknownCriteria || []).map(r => `<div class="criteria-item missing"><span>?</span><span>${safe(r)}</span></div>`).join('');
+
+      // Application Status or Register/Apply Button
+      const app = state.myApplications.get(id);
+      let actionArea = '';
+      if (app) {
+        const appStatus = app.status || 'pending';
+        const statusText = appStatus === 'approved'
+          ? '✓ Application Approved!'
+          : appStatus === 'rejected'
+          ? '✗ Application Rejected'
+          : '⏳ Application Pending Review';
+        actionArea = `<span class="app-status-pill ${safe(appStatus)}">${safe(statusText)}</span>`;
+      } else {
+        actionArea = `
+          <button class="btn btn-yellow apply-match-btn" data-apply="${safe(id)}" data-score="${x.score}" data-title="${safe(x.title)}">
+            Register / Apply ↗
+          </button>
+        `;
+      }
 
       return `
         <div class="match-result-item">
@@ -398,6 +422,12 @@ function renderMatches(matches) {
               ${passedItems}
               ${unmetItems}
               ${missingItems}
+            </div>
+            <div class="match-item-footer">
+              <div class="match-action-container" data-apply-container="${safe(id)}">
+                ${actionArea}
+              </div>
+              <button class="details-btn" data-detail="${safe(id)}">View Details ↗</button>
             </div>
           </div>
         </div>
@@ -463,9 +493,11 @@ async function checkAuth() {
     updateNavForUser();
     if (state.user.role === 'provider') {
       loadProviderScholarships();
+      loadProviderApplications();
     } else if (state.user.role === 'student') {
       populateStudentMatcher();
       syncStudentSaved();
+      loadStudentApplications();
     }
   } catch (err) {
     logout();
@@ -473,6 +505,9 @@ async function checkAuth() {
 }
 
 function updateNavForGuest() {
+  state.myApplications.clear();
+  state.providerApplications = [];
+  state.providerScholarships = [];
   $('#authNavArea').innerHTML = `
     <button id="navLoginBtn" class="btn btn-outline nav-btn">Sign In / Register</button>
   `;
@@ -503,7 +538,7 @@ function updateNavForUser() {
 
     $('#authNavArea').innerHTML = `
       <span class="user-greeting">🏢 ${safe(org)} ${badge}</span>
-      <button id="navProviderListingsBtn" class="btn btn-outline nav-btn">My Listings</button>
+      <button id="navProviderListingsBtn" class="btn btn-outline nav-btn">My Workspace</button>
       <button id="navLogoutBtn" class="btn btn-outline nav-btn">Log Out</button>
     `;
     $('#heroRoleNote').textContent = `Scholarship Provider: ${org}`;
@@ -517,8 +552,14 @@ function updateNavForUser() {
 function logout() {
   state.token = null;
   state.user = null;
+  state.myApplications.clear();
+  state.providerScholarships = [];
+  state.providerApplications = [];
   localStorage.removeItem('sf-token');
   updateNavForGuest();
+  if (state.lastMatches && state.lastMatches.length) {
+    renderMatches(state.lastMatches);
+  }
   toast('You have logged out.');
 }
 
@@ -553,12 +594,68 @@ async function syncStudentSaved() {
   } catch (err) {}
 }
 
+// STUDENT APPLICATION WORKFLOW
+async function loadStudentApplications() {
+  if (!state.user || state.user.role !== 'student') return;
+  try {
+    const res = await api('/api/student/applications');
+    state.myApplications.clear();
+    (res.data || []).forEach(app => {
+      const sId = String(app.scholarship?._id || app.scholarship);
+      state.myApplications.set(sId, app);
+    });
+    if (state.lastMatches && state.lastMatches.length) {
+      renderMatches(state.lastMatches);
+    }
+  } catch (err) {
+    console.error('Failed to load student applications:', err);
+  }
+}
+
+async function handleApplyScholarship(scholarshipId, score, btnEl, containerEl) {
+  if (!state.user) {
+    toast('Please sign in or register as a Student to apply for scholarships.');
+    $('#authDialog').showModal();
+    return;
+  }
+
+  if (state.user.role === 'provider') {
+    return toast('You are logged in as a Scholarship Provider. Only students can apply for scholarships.');
+  }
+
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.textContent = 'Submitting…';
+  }
+
+  try {
+    const res = await api(`/api/student/apply/${scholarshipId}`, {
+      method: 'POST',
+      body: JSON.stringify({ matchScore: score })
+    });
+
+    state.myApplications.set(String(scholarshipId), res.data);
+    if (containerEl) {
+      containerEl.innerHTML = `<span class="app-status-pill pending">⏳ Application Pending Review</span>`;
+    }
+    toast('Application submitted successfully! The scholarship provider will review it.');
+  } catch (err) {
+    toast(err.message);
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.textContent = 'Register / Apply ↗';
+    }
+  }
+}
+
 // PROVIDER WORKFLOW: Load & Manage Own Scholarships
 async function loadProviderScholarships() {
   if (!state.user || state.user.role !== 'provider') return;
   try {
     const res = await api('/api/provider/scholarships');
     state.providerScholarships = res.data || [];
+    const countEl = $('#providerListingsCount');
+    if (countEl) countEl.textContent = state.providerScholarships.length;
     renderProviderListings();
   } catch (err) {
     $('#providerGrid').innerHTML = `<div class="empty-state">Could not load your listings: ${safe(err.message)}</div>`;
@@ -606,6 +703,128 @@ function renderProviderListings() {
       </article>
     `;
   }).join('');
+}
+
+// PROVIDER WORKFLOW: Review & Decide Student Applications (Approve or Reject)
+async function loadProviderApplications() {
+  if (!state.user || state.user.role !== 'provider') return;
+  try {
+    const res = await api('/api/provider/applications');
+    state.providerApplications = res.data || [];
+    const countEl = $('#providerAppCount');
+    if (countEl) countEl.textContent = state.providerApplications.length;
+    renderProviderApplications();
+  } catch (err) {
+    const el = $('#providerAppList');
+    if (el) el.innerHTML = `<div class="empty-state">Could not load applicant submissions: ${safe(err.message)}</div>`;
+  }
+}
+
+function renderProviderApplications() {
+  const n = $('#providerAppList');
+  if (!n) return;
+
+  if (!state.providerApplications.length) {
+    n.innerHTML = `
+      <div class="empty-state">
+        <b>No applicant submissions yet.</b>
+        <p style="margin:8px 0 0;font-size:11px">When students match with and register/apply for your published scholarships, their application cards and academic details will appear here for your review and approval.</p>
+      </div>
+    `;
+    return;
+  }
+
+  n.innerHTML = state.providerApplications.map(app => {
+    const id = String(app._id);
+    const snap = app.studentSnapshot || {};
+    const studentName = snap.name || app.student?.name || 'Student Applicant';
+    const studentEmail = snap.email || app.student?.email || 'N/A';
+    const scholarshipTitle = app.scholarship?.title || 'Scholarship Award';
+    const status = app.status || 'pending';
+    const gpaText = snap.gpa !== null && snap.gpa !== undefined
+      ? `${snap.gpa} / ${snap.gpaScale || 10}`
+      : 'Not reported';
+    const incomeText = snap.annualFamilyIncome
+      ? `₹${snap.annualFamilyIncome.toLocaleString('en-IN')}`
+      : 'Not reported';
+    const coursesText = (snap.courses || []).length
+      ? snap.courses.join(', ')
+      : 'Not specified';
+    const educationText = snap.educationLevel || 'Not specified';
+    const locationText = [snap.state, snap.category, snap.gender].filter(Boolean).join(' · ') || 'General';
+
+    let decisionHtml = '';
+    if (status === 'pending') {
+      decisionHtml = `
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn-approve" data-decide-app="${safe(id)}" data-decision="approved">✓ Approve Application</button>
+          <button class="btn-reject" data-decide-app="${safe(id)}" data-decision="rejected">✗ Reject</button>
+        </div>
+      `;
+    } else if (status === 'approved') {
+      decisionHtml = `
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="app-status-pill approved">✓ Approved</span>
+          <button class="btn-change-decision" data-decide-app="${safe(id)}" data-decision="rejected">Change to Reject</button>
+        </div>
+      `;
+    } else {
+      decisionHtml = `
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="app-status-pill rejected">✗ Rejected</span>
+          <button class="btn-change-decision" data-decide-app="${safe(id)}" data-decision="approved">Change to Approve</button>
+        </div>
+      `;
+    }
+
+    const decidedTime = app.decidedAt ? `<small style="color:#6b7280;margin-left:8px">Decided: ${safe(dateLabel(app.decidedAt))}</small>` : '';
+
+    return `
+      <article class="applicant-card">
+        <div class="applicant-card-header">
+          <div>
+            <h4>👤 ${safe(studentName)} <span class="app-status-pill ${safe(status)}">${safe(status.toUpperCase())}</span></h4>
+            <p class="applicant-sub">Applied for: <b>${safe(scholarshipTitle)}</b> · ${safe(dateLabel(app.appliedAt || app.createdAt))}</p>
+          </div>
+          <div style="text-align:right">
+            <span class="unverified-tag" style="background:#eef2ff;color:#3730a3;border-color:#c7d2fe;font-size:11px">
+              ✦ Match Score: ${app.matchScore || 0}%
+            </span>
+          </div>
+        </div>
+
+        <div class="applicant-profile-details">
+          <div><b>Contact Email</b><span>${safe(studentEmail)}</span></div>
+          <div><b>Education Level</b><span>${safe(educationText)}</span></div>
+          <div><b>Fields / Courses</b><span>${safe(coursesText)}</span></div>
+          <div><b>GPA / Marks</b><span>${safe(gpaText)}</span></div>
+          <div><b>Family Income</b><span>${safe(incomeText)}</span></div>
+          <div><b>Category / Region</b><span>${safe(locationText)}</span></div>
+        </div>
+
+        <div class="applicant-decision-bar">
+          <div>
+            <span style="font-size:11px;font-weight:700;color:#374151">Provider Decision:</span>
+            ${decidedTime}
+          </div>
+          ${decisionHtml}
+        </div>
+      </article>
+    `;
+  }).join('');
+}
+
+async function handleApplicationDecision(appId, decision) {
+  try {
+    const res = await api(`/api/provider/applications/${appId}/decision`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: decision })
+    });
+    toast(res.message || `Application marked as ${decision}.`);
+    await loadProviderApplications();
+  } catch (err) {
+    toast(err.message);
+  }
 }
 
 // Open Student Profile Modal
@@ -734,6 +953,23 @@ function events() {
     const editBtn = e.target.closest('[data-edit-listing]');
     const toggleStatusBtn = e.target.closest('[data-toggle-status]');
     const deleteBtn = e.target.closest('[data-delete-listing]');
+    const applyBtn = e.target.closest('[data-apply]');
+    const decideBtn = e.target.closest('[data-decide-app]');
+
+    if (applyBtn) {
+      const scholarshipId = applyBtn.dataset.apply;
+      const score = Number(applyBtn.dataset.score) || 0;
+      const container = applyBtn.closest('.match-action-container');
+      handleApplyScholarship(scholarshipId, score, applyBtn, container);
+      return;
+    }
+
+    if (decideBtn) {
+      const appId = decideBtn.dataset.decideApp;
+      const decision = decideBtn.dataset.decision;
+      handleApplicationDecision(appId, decision);
+      return;
+    }
 
     if (s) {
       const id = s.dataset.save;
@@ -821,6 +1057,28 @@ function events() {
     $('#loginForm').classList.add('hidden');
   });
 
+  // Provider Workspace Tab Switching
+  const tabListings = $('#tabProviderListings');
+  const tabApps = $('#tabProviderApplications');
+  if (tabListings && tabApps) {
+    tabListings.addEventListener('click', () => {
+      tabListings.classList.add('active');
+      tabApps.classList.remove('active');
+      $('#providerListingsView')?.classList.remove('hidden');
+      $('#providerApplicationsView')?.classList.add('hidden');
+      $('#createListingBtn')?.classList.remove('hidden');
+    });
+
+    tabApps.addEventListener('click', () => {
+      tabApps.classList.add('active');
+      tabListings.classList.remove('active');
+      $('#providerApplicationsView')?.classList.remove('hidden');
+      $('#providerListingsView')?.classList.add('hidden');
+      $('#createListingBtn')?.classList.add('hidden');
+      loadProviderApplications();
+    });
+  }
+
   // Role Selection (Student vs Provider)
   $$('input[name="accountRole"]').forEach(r => r.addEventListener('change', () => {
     const isProvider = $('input[name="accountRole"]:checked').value === 'provider';
@@ -846,10 +1104,12 @@ function events() {
       updateNavForUser();
       if (state.user.role === 'provider') {
         loadProviderScholarships();
+        loadProviderApplications();
         $('#providerDashboard').scrollIntoView({ behavior: 'smooth' });
       } else if (state.user.role === 'student') {
         populateStudentMatcher();
         syncStudentSaved();
+        loadStudentApplications();
       }
     } catch (err) {
       toast(err.message);
@@ -887,6 +1147,11 @@ function events() {
       updateNavForUser();
       if (state.user.role === 'provider') {
         loadProviderScholarships();
+        loadProviderApplications();
+      } else if (state.user.role === 'student') {
+        populateStudentMatcher();
+        syncStudentSaved();
+        loadStudentApplications();
       }
     } catch (err) {
       toast(err.message);
